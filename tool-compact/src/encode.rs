@@ -5,18 +5,14 @@ use serde_json::Value;
 use crate::schema::is_compactable;
 use crate::types::{CompactTools, Error, ToolDef};
 
-const INSTRUCTIONS: &str = "Call a tool by emitting exactly\n<<call NAME {JSON_ARGS}>>\non its own line, JSON args must be valid JSON with double-quoted keys, omit optional args it doesn't know, never invent tools, multiple calls allowed, plain answer with no marker when no tool is needed.";
+const INSTRUCTIONS: &str = "Tools: name(arg:type, arg?:type) - desc. ? optional. Call: <<call NAME {JSON}>> per call (valid JSON, listed tools only; multiple calls allowed). If no tool is needed, answer normally.";
 
 pub fn encode_tools(tools: &[ToolDef]) -> Result<CompactTools, Error> {
     if !is_compactable(tools) {
         return Err(Error::UnsupportedSchema);
     }
 
-    let text = tools
-        .iter()
-        .map(tool_line)
-        .collect::<Vec<_>>()
-        .join("\n");
+    let text = tools.iter().map(tool_line).collect::<Vec<_>>().join("\n");
 
     Ok(CompactTools {
         text,
@@ -26,7 +22,11 @@ pub fn encode_tools(tools: &[ToolDef]) -> Result<CompactTools, Error> {
 
 fn tool_line(tool: &ToolDef) -> String {
     let params = schema_params_text(tool.parameters.as_ref());
-    let description = tool.description.as_deref().unwrap_or("");
+    let description = tool
+        .description
+        .as_deref()
+        .map(short_tool_description)
+        .unwrap_or_default();
     if description.is_empty() {
         format!("{}({})", tool.name, params)
     } else {
@@ -160,7 +160,7 @@ fn short_description(value: &Value, key: &str) -> Option<String> {
         return None;
     };
     let desc = obj.get("description")?.as_str()?.trim();
-    if desc.is_empty() || desc.eq_ignore_ascii_case(key) {
+    if desc.is_empty() || description_repeats_key_or_type(desc, key, value) {
         return None;
     }
     let mut out = desc.chars().take(60).collect::<String>();
@@ -168,4 +168,110 @@ fn short_description(value: &Value, key: &str) -> Option<String> {
         out = out.trim_end().to_string();
     }
     Some(out)
+}
+
+fn short_tool_description(description: &str) -> String {
+    description
+        .split_whitespace()
+        .filter(|word| {
+            !matches!(
+                word.trim_matches(|c: char| !c.is_alphanumeric())
+                    .to_ascii_lowercase()
+                    .as_str(),
+                "a" | "an" | "the"
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn description_repeats_key_or_type(description: &str, key: &str, schema: &Value) -> bool {
+    let description_words = description_words(description);
+    let mut key_words = identifier_words(key);
+    match key {
+        "to" => key_words = vec!["recipient".to_string()],
+        "attendees" => key_words = vec!["attendee".to_string()],
+        _ => {}
+    }
+
+    let mut key_description_words = description_words
+        .iter()
+        .filter(|word| {
+            !matches!(
+                word.as_str(),
+                "a" | "an" | "the" | "of" | "in" | "event" | "line" | "plain" | "text"
+            )
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    if matches!(key, "to" | "attendees" | "cc" | "bcc") {
+        key_description_words.retain(|word| word != "email" && word != "emails");
+    }
+    if key_description_words == key_words {
+        return true;
+    }
+
+    let type_words = description_words
+        .iter()
+        .filter(|word| !matches!(word.as_str(), "a" | "an" | "the"))
+        .cloned()
+        .collect::<Vec<_>>();
+    type_description_words(schema).is_some_and(|types| types.contains(&type_words))
+}
+
+fn description_words(text: &str) -> Vec<String> {
+    text.split(|c: char| !c.is_ascii_alphanumeric())
+        .filter(|word| !word.is_empty())
+        .map(str::to_ascii_lowercase)
+        .collect()
+}
+
+fn identifier_words(text: &str) -> Vec<String> {
+    let mut words = Vec::new();
+    let mut word = String::new();
+    for c in text.chars() {
+        if c.is_ascii_alphanumeric() {
+            if c.is_ascii_uppercase() && !word.is_empty() {
+                words.push(normalize_word(&word));
+                word.clear();
+            }
+            word.push(c.to_ascii_lowercase());
+        } else if !word.is_empty() {
+            words.push(normalize_word(&word));
+            word.clear();
+        }
+    }
+    if !word.is_empty() {
+        words.push(normalize_word(&word));
+    }
+    words
+}
+
+fn normalize_word(word: &str) -> String {
+    if let Some(stem) = word.strip_suffix("ies") {
+        format!("{stem}y")
+    } else if word.ends_with('s') && !word.ends_with("ss") {
+        word[..word.len() - 1].to_string()
+    } else {
+        word.to_string()
+    }
+}
+
+fn type_description_words(schema: &Value) -> Option<Vec<Vec<String>>> {
+    let Value::Object(obj) = schema else {
+        return None;
+    };
+    if matches!(obj.get("format"), Some(Value::String(format)) if format == "date-time") {
+        return None;
+    }
+    let words = match obj.get("type").and_then(Value::as_str)? {
+        "string" => vec![vec!["string".to_string()], vec!["str".to_string()]],
+        "integer" => vec![vec!["integer".to_string()], vec!["int".to_string()]],
+        "number" => vec![vec!["number".to_string()], vec!["num".to_string()]],
+        "boolean" => vec![vec!["boolean".to_string()], vec!["bool".to_string()]],
+        "array" => vec![vec!["array".to_string()]],
+        "object" => vec![vec!["object".to_string()]],
+        _ => return None,
+    };
+    Some(words)
 }

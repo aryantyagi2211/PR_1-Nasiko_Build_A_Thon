@@ -1,7 +1,9 @@
 use proptest::prelude::*;
 use serde_json::{json, Value};
 
-use nasiko_tool_compact::{decode_calls, decode_tools, decode_with_text, encode_tools, Event, StreamDecoder, ToolDef};
+use nasiko_tool_compact::{
+    decode_calls, decode_tools, decode_with_text, encode_tools, Event, StreamDecoder, ToolDef,
+};
 
 fn calendar_tool() -> ToolDef {
     ToolDef {
@@ -84,7 +86,11 @@ fn int_vs_num() {
 #[test]
 fn missing_required_field() {
     let tools = vec![calendar_tool()];
-    let err = decode_calls("<<call create_calendar_event {\"start\":\"2026-10-05T15:00:00+05:30\"}>>", &tools).unwrap_err();
+    let err = decode_calls(
+        "<<call create_calendar_event {\"start\":\"2026-10-05T15:00:00+05:30\"}>>",
+        &tools,
+    )
+    .unwrap_err();
     assert_eq!(err.code(), "invalid_arguments");
 }
 
@@ -114,14 +120,13 @@ fn unsupported_schema_is_rejected() {
 }
 
 #[test]
-fn encode_decode_tools_roundtrip_keeps_schema_shape() {
+fn encode_decode_tools_roundtrip_keeps_compact_shape() {
     let tool = calendar_tool();
     let encoded = encode_tools(&[tool.clone()]).unwrap();
     let decoded = decode_tools(&encoded).unwrap();
     assert_eq!(decoded.len(), 1);
     assert_eq!(decoded[0].name, tool.name);
-    assert_eq!(decoded[0].description, tool.description);
-    assert_eq!(decoded[0].parameters, tool.parameters);
+    assert_eq!(encode_tools(&decoded).unwrap(), encoded);
 }
 
 #[test]
@@ -131,6 +136,19 @@ fn encode_is_deterministic() {
     let b = encode_tools(&[tool]).unwrap();
     assert_eq!(a.text, b.text);
     assert_eq!(a.instructions, b.instructions);
+}
+
+#[test]
+fn encode_omits_redundant_descriptions_and_keeps_disambiguating_details() {
+    let encoded = encode_tools(&[calendar_tool(), email_tool()]).unwrap();
+    assert_eq!(
+        encoded.instructions,
+        "Tools: name(arg:type, arg?:type) - desc. ? optional. Call: <<call NAME {JSON}>> per call (valid JSON, listed tools only; multiple calls allowed). If no tool is needed, answer normally."
+    );
+    assert_eq!(
+        encoded.text,
+        "create_calendar_event(title:str, start:datetime /Start time, ISO 8601, attendees?:[str], duration_min?:int /Duration in minutes, visibility?:public|private) - Create event in user's calendar.\nsend_email(to:[str], subject:str, body:str, cc?:[str]) - Send email from user's account."
+    );
 }
 
 #[test]

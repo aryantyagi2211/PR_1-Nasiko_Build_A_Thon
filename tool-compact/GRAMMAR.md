@@ -8,12 +8,18 @@ Tool line:  name(param, param, ...) - description
            | "{" param, ... "}"                (nested object)
   datetime = string with format "date-time".
 
-Param descriptions: append " /short text" after the type ONLY when the schema description exists and adds meaning (skip if it only repeats the param name; truncate to 60 chars, deterministic). Example:
-  create_calendar_event(title:str, start:datetime /Start time ISO 8601, duration_min?:int /Duration in minutes, attendees?:[str], visibility?:public|private) - Create an event in the user's calendar.
+Parameter descriptions are omitted when their normalized words only repeat the
+parameter name or type. For names, split snake/camel case, normalize common
+plurals, ignore articles and generic fillers (event, line, plain text), map
+"to" to "recipient", and ignore "email(s)" for recipient/attendee/cc/bcc names.
+For types, omit descriptions containing only the type name (string/str,
+integer/int, number/num, boolean/bool, array, or object). Otherwise append
+" /short text" after the type, truncating to 60 characters. These rules are
+deterministic. Example:
+  create_calendar_event(title:str, start:datetime /Start time, ISO 8601, duration_min?:int /Duration in minutes, attendees?:[str], visibility?:public|private) - Create event in user's calendar.
 
-Instructions text: tell the model to call a tool by emitting exactly
-  <<call NAME {JSON_ARGS}>>
-on its own, JSON args must be valid JSON with double-quoted keys, omit optional args it doesn't know, never invent tools, multiple calls allowed, plain answer with no marker when no tool is needed.
+Instructions text:
+  Tools: name(arg:type, arg?:type) - desc. ? optional. Call: <<call NAME {JSON}>> per call (valid JSON, listed tools only; multiple calls allowed). If no tool is needed, answer normally.
 Call syntax: "<<call" SP name SP json ">>". Name = [A-Za-z0-9_.-]+.
 The JSON value is found by a string-aware scanner (track quotes, escapes, brace/bracket depth), so ">>" inside a string is fine; the call ends at the first ">>" after the JSON value closes (whitespace allowed before it).
 Text before/after/between calls is preserved as text.

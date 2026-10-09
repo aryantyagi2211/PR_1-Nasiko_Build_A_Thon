@@ -143,7 +143,7 @@ fn encode_omits_redundant_descriptions_and_keeps_disambiguating_details() {
     let encoded = encode_tools(&[calendar_tool(), email_tool()]).unwrap();
     assert_eq!(
         encoded.instructions,
-        "Tools: name(arg:type, arg?:type) - desc. ? optional. Call: <<call NAME {JSON}>> per call (valid JSON, listed tools only; multiple calls allowed). If no tool is needed, answer normally."
+        "Reply with ONLY calls in <<call NAME {JSON}>> format. Example:\n<<call create_calendar_event {\"start\":\"x\",\"title\":\"x\"}>>\nNever claim an action is done without a call. ? = optional. If no tool fits, answer normally."
     );
     assert_eq!(
         encoded.text,

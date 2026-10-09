@@ -5,8 +5,6 @@ use serde_json::Value;
 use crate::schema::is_compactable;
 use crate::types::{CompactTools, Error, ToolDef};
 
-const INSTRUCTIONS: &str = "Tools: name(arg:type, arg?:type) - desc. ? optional. Call: <<call NAME {JSON}>> per call (valid JSON, listed tools only; multiple calls allowed). If no tool is needed, answer normally.";
-
 pub fn encode_tools(tools: &[ToolDef]) -> Result<CompactTools, Error> {
     if !is_compactable(tools) {
         return Err(Error::UnsupportedSchema);
@@ -16,8 +14,85 @@ pub fn encode_tools(tools: &[ToolDef]) -> Result<CompactTools, Error> {
 
     Ok(CompactTools {
         text,
-        instructions: INSTRUCTIONS.to_string(),
+        instructions: instructions(tools),
     })
+}
+
+fn instructions(tools: &[ToolDef]) -> String {
+    let example = tools
+        .first()
+        .map(|tool| {
+            let arguments = example_arguments(tool.parameters.as_ref());
+            format!(
+                "\n<<call {} {}>>\n",
+                tool.name,
+                serde_json::to_string(&arguments).unwrap_or_else(|_| "{}".to_string())
+            )
+        })
+        .unwrap_or_else(|| "\n".to_string());
+
+    format!(
+        "Reply with ONLY calls in <<call NAME {{JSON}}>> format. Example:{example}Never claim an action is done without a call. ? = optional. If no tool fits, answer normally."
+    )
+}
+
+fn example_arguments(parameters: Option<&Value>) -> Value {
+    let Some(Value::Object(schema)) = parameters else {
+        return Value::Object(serde_json::Map::new());
+    };
+    let Some(Value::Object(properties)) = schema.get("properties") else {
+        return Value::Object(serde_json::Map::new());
+    };
+    let required: Vec<&str> = schema
+        .get("required")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .collect();
+
+    let mut arguments = serde_json::Map::new();
+    for key in required {
+        if let Some(property) = properties.get(key) {
+            arguments.insert(key.to_string(), example_value(property));
+        }
+    }
+    Value::Object(arguments)
+}
+
+fn example_value(schema: &Value) -> Value {
+    let Value::Object(schema) = schema else {
+        return Value::String("x".to_string());
+    };
+    if let Some(first) = schema.get("enum").and_then(Value::as_array).and_then(|e| e.first()) {
+        return first.clone();
+    }
+    match schema.get("type").and_then(Value::as_str) {
+        Some("string") => Value::String("x".to_string()),
+        Some("integer") | Some("number") => Value::Number(1.into()),
+        Some("boolean") => Value::Bool(true),
+        Some("array") => Value::Array(vec![Value::String("x".to_string())]),
+        Some("object") => {
+            let Some(Value::Object(properties)) = schema.get("properties") else {
+                return Value::Object(serde_json::Map::new());
+            };
+            let required: Vec<&str> = schema
+                .get("required")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+                .collect();
+            let mut object = serde_json::Map::new();
+            for key in required {
+                if let Some(property) = properties.get(key) {
+                    object.insert(key.to_string(), example_value(property));
+                }
+            }
+            Value::Object(object)
+        }
+        _ => Value::Null,
+    }
 }
 
 fn tool_line(tool: &ToolDef) -> String {

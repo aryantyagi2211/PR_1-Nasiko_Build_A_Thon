@@ -19,7 +19,13 @@ deterministic. Example:
   create_calendar_event(title:str, start:datetime /Start time, ISO 8601, duration_min?:int /Duration in minutes, attendees?:[str], visibility?:public|private) - Create event in user's calendar.
 
 Instructions text:
-  Tools: name(arg:type, arg?:type) - desc. ? optional. Call: <<call NAME {JSON}>> per call (valid JSON, listed tools only; multiple calls allowed). If no tool is needed, answer normally.
+  You have no other way to act. To use a tool, reply with ONLY calls, one
+  per line: <<call NAME {JSON}>> (valid JSON, listed tools only). Example:
+  <<call create_calendar_event {"start":"x","title":"x"}>>
+  Never claim an action is done without a call. ? = optional arg. If no tool
+  fits, answer normally.
+The example is generated from the first listed tool and includes only its
+required arguments, using deterministic placeholder values.
 Call syntax: "<<call" SP name SP json ">>". Name = [A-Za-z0-9_.-]+.
 The JSON value is found by a string-aware scanner (track quotes, escapes, brace/bracket depth), so ">>" inside a string is fine; the call ends at the first ">>" after the JSON value closes (whitespace allowed before it).
 Text before/after/between calls is preserved as text.

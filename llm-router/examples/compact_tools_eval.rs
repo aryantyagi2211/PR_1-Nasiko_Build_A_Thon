@@ -47,7 +47,7 @@ fn openai_tool_to_def(v: &Value) -> ToolDef {
 
 /// Fixed reference time line that goes at the top of every system message.
 const TIME_LINE: &str =
-    "Today is 2026-10-02. Timezone: Asia/Kolkata (+05:30). Resolve relative dates to ISO 8601 with offset.";
+    "Today is Friday 2026-10-02. Timezone: Asia/Kolkata (+05:30). Resolve relative dates to ISO 8601 with offset.";
 
 // ---------------------------------------------------------------------------
 // Helpers
